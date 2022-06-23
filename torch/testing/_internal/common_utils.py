@@ -1676,6 +1676,44 @@ class ObjectPair(UnittestPair):
     CLS = object
 
 
+def skip_dynamo(test_object):
+    skips = {
+        "TestFunctionalization": ("test_metadata_change",),
+        "TestModuleGlobalHooks": (
+            # Hooks
+            "test_module_global_forward_preforward_hook_writeable",
+            "test_module_global_hooks",
+            "test_global_and_local_hooks_order",
+        ),
+        "TestNNDeviceTypeCPU": (
+            # Unknown
+            "test_spectral_norm",
+            "test_pixel_shuffle_unshuffle",
+        ),
+        "TestNN": (
+            # Hooks
+            "test_hook_backward_writeable",
+            "test_hook_forward_preforward_writable",
+            "test_hook_no_requires_grad",
+            "test_hooks",
+            # parameters
+            "test_ParameterDict",
+            "test_parameter_assignment",
+            # Ref cycle
+            "test_load_state_dict_ref_cycle",
+            # Unknown
+            "test_embedding_bag_1D_padding_idx_cpu_float32",
+            "test_embedding_bag_1D_padding_idx_cpu_float64",
+        ),
+    }
+
+    test_module = test_object.__class__.__name__
+    test_method = test_object._testMethodName
+    if test_module in skips and test_method in skips[test_module]:
+        return True
+    return False
+
+
 # This implements a variant of assertRaises/assertRaisesRegex where we first test
 # if the exception is NotImplementedError, and if so just skip the test instead
 # of failing it.
@@ -1826,7 +1864,25 @@ class TestCase(expecttest.TestCase):
             failures_before = 0 if result is None else len(result.failures)  # num tests marked as failed before starting
             errors_before = 0 if result is None else len(result.errors)  # num tests marked as errored before starting
 
-        super().run(result=result)
+        use_dynamo = os.getenv('PYTORCH_TEST_WITH_DYNAMO') == '1'
+
+        if use_dynamo:
+            import torchdynamo
+            # torchdynamo.config.trace = True
+            # torchdynamo.config.debug = True
+            torchdynamo.config.print_internal_exceptions = False
+            # TODO - Collect errors with fake tensors
+            torchdynamo.config.fake_tensor_propagation = False
+            if skip_dynamo(self):
+                ctx = contextlib.nullcontext()
+            else:
+                ctx = torchdynamo.optimize("eager")
+            with ctx:
+                super().run(result=result)
+            torchdynamo.reset()
+        else:
+            super().run(result=result)
+
         # Early terminate test if necessary.
         if self._should_stop_test_suite():
             if result.wasSuccessful():
