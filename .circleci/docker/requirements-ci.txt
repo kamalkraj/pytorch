@@ -146,7 +146,7 @@ pytest
 pytest-xdist
 #Description: pluging for running pytest in parallel
 #Pinned versions:
-#test that import: 
+#test that import:
 
 #pytest-benchmark
 #Description: fixture for benchmarking code
